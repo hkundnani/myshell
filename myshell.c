@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <stdlib.h>
 
 const int SIZE = 80;
 const char *COMMANDS[] = {"exit", "cd", "pwd", "set"};
@@ -26,7 +27,7 @@ void parse_input (char *input, char **tokens) {
 
 int myshell_cd(char **tokens) {
     if (tokens[1] == NULL) {
-        printf ("Expects additional argument after cd\n");
+        printf("Need additional argument");
     } else {
         if (chdir(tokens[1]) != 0) {
             printf ("Error executing cd command\n");
@@ -35,15 +36,48 @@ int myshell_cd(char **tokens) {
     return 1; 
 }
 
+int myshell_exit(char **tokens) {
+    return 0;
+}
+
+int myshell_set(char **tokens) {
+    char *token;
+    char param[SIZE][SIZE];
+    int index = 0;
+    // char param2[SIZE];
+
+    if (tokens[1] == NULL) {
+        printf ("Need additional argument");
+    } else {
+        token = strtok(tokens[1], "=");
+        while (token != NULL) {
+            for (size_t i=0; i < strlen(token); i++) {
+                param[index][i] = token[i];
+            }
+            index++;
+            token = strtok(NULL, "=");
+        }
+        if (setenv(param[0], param[1], 1) != 0) {
+            printf ("Error executing cd command\n");
+        }
+    }
+    // token = getenv(param[0]); 
+    // if (token != NULL) {
+    //     printf ("token: %s\n", token);
+    // }
+    return 1;
+}
+
 int execute_command(char **tokens) {
     int status;
     pid_t pid = fork();
     if (pid == 0) {
         if (execvp(tokens[0], tokens) == -1) {
-            printf ("Error in executing command\n");
+            perror("Error");
         }
+        exit(EXIT_FAILURE);
     } else if (pid == -1) {
-        printf ("Error at forking\n");
+        perror ("Error");
     } 
     else {
         waitpid(pid, &status, 0);
@@ -54,35 +88,30 @@ int execute_command(char **tokens) {
 int execute_input(char **tokens) {
     int builtinCount = sizeof COMMANDS / sizeof *COMMANDS;
     int retVal = 1;
-    int flag = 1;
 
     if (tokens[0] == NULL) {
         return 1;
     }
     for  (int i = 0; i < builtinCount; i++) {
         if (strcmp(COMMANDS[i], tokens[0]) == 0) {
-            flag = 0;
             switch(i) {
                 case 0:
-                    retVal = 0;
+                    retVal = myshell_exit(tokens);
+                    return retVal;
                     break;
                 case 1:
                     retVal = myshell_cd(tokens);
-                    execute_command(tokens);
-                    break;
-                case 2:
-                    retVal = execute_command(tokens);
+                    return retVal;
                     break;
                 case 3:
+                    retVal = myshell_set(tokens);
+                    return retVal;
                     break;
             };
         }
     }
 
-    if (flag) {
-        printf ("The command is not supported\n");
-    }
-    return retVal;
+    return execute_command(tokens);
 }
 
 int main () {
