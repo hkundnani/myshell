@@ -6,21 +6,23 @@
 
 const int SIZE = 80;
 const char *COMMANDS[] = {"exit", "cd", "pwd", "set"};
+const char *PIPE = "|";
+const char *SPACE = " \t\n\r";
 
 void read_input(char *input) {
     fgets(input, 80, stdin);
 }
 
-void parse_input (char *input, char **tokens) {
+void parse_input (char *input, char **tokens, const char *delim) {
     char *token;
     int index = 0;
     
-    token = strtok(input, " \t\n\r");
+    token = strtok(input, delim);
     
     while (token != NULL) {
         tokens[index] = token;
         index++;
-        token = strtok(NULL, " \t\n\r");
+        token = strtok(NULL, delim);
     }
     tokens[index] = NULL;
 }
@@ -143,16 +145,6 @@ int parse_io_char(char **tokens) {
     }
 }
 
-void parse_pipe_char(char **tokens, int *pipe_pos) {
-    int index = 0;
-    for (int i = 0; tokens[i] != NULL; i++) {
-        if (strcmp(tokens[i], "|") == 0) {
-            pipe_pos[index] = i;
-            index++;
-        }
-    }
-}
-
 int myshell_cd(char **tokens) {
     if (tokens[1] == NULL) {
         char *token = getenv("HOME");
@@ -209,7 +201,7 @@ int myshell_set(char **tokens) {
     return 1;
 }
 
-int execute_command(char **tokens) {
+int execute_external(char **tokens) {
     int status;
     pid_t pid = fork();
     if (pid == 0) {
@@ -226,72 +218,71 @@ int execute_command(char **tokens) {
     return 1;
 }
 
-// int handle_out_redirection(char *filename, char **tokens) {
-//     FILE *fp;
-//     fp = freopen(filename, "w+", stdout);
-//     if (fp == NULL) {
-//         printf ("Error in opening file\n");
-//     }
-//     execute_command(tokens);
-//     fclose(fp);
-//     return 1;
-// }
-
-int execute_input(char **tokens) {
+int execute_builtIn(char **tokens) {
     int builtinCount = sizeof COMMANDS / sizeof *COMMANDS;
-    int retVal = 1;
-    int flag = 0;
-    // int pipe_pos[SIZE];
 
-    if (tokens[0] == NULL) {
-        return 1;
-    }
-    // check for special character
-    int io_char = parse_io_char(tokens);
-    // parse_pipe_char(tokens, pipe_pos);
-    // if (io_char == 0) {
-
-        // switch(special_char) {
-        //     case 2:
-        //         retVal = handle_out_redirection(filename, tokens);
-        //         return retVal;
-        //         break;
-        //     case 3:
-        //         retVal = handle_in_redirection(filename, tokens);
-        //         return retVal;
-        //         break;
-        //     case 4:
-        //         break;
-        // }
-        // return 1;
-    // }
-    if (io_char == 0) {
-        for  (int i = 0; i < builtinCount; i++) {
-            if (strcmp(COMMANDS[i], tokens[0]) == 0) {
-                flag = 1;
-                switch(i) {
-                    case 0:
-                        retVal = myshell_exit(tokens);
-                        return retVal;
-                        break;
-                    case 1:
-                        retVal = myshell_cd(tokens);
-                        return retVal;
-                        break;
-                    case 2:
-                        retVal = myshell_pwd(tokens);
-                        return retVal;
-                        break;
-                    case 3:
-                        retVal = myshell_set(tokens);
-                        return retVal;
-                        break;
-                };
-            }
+    for  (int i = 0; i < builtinCount; i++) {
+        if (strcmp(COMMANDS[i], tokens[0]) == 0) {
+            switch(i) {
+                case 0:
+                    return myshell_exit(tokens);
+                    break;
+                case 1:
+                    return myshell_cd(tokens);
+                    break;
+                case 2:
+                    return myshell_pwd(tokens);
+                    break;
+                case 3:
+                    return myshell_set(tokens);
+                    break;
+            };
         }
     }
-    if (flag == 0 && io_char == 0) {
-        retVal = execute_command(tokens);
+    return 0;
+}
+
+int parse_pipe_char(char *input, char **tokens) {
+    int flag = 0;
+    char *cmds[SIZE]; 
+    char *token[SIZE];
+
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], "|") == 0) {
+            flag = 1;
+            break;
+        }
+    }
+    if (flag == 1) {
+        parse_input(input, cmds, PIPE);
+        for (int i = 0; cmds[i] != NULL; i++) {
+            parse_input(cmds[i], token, SPACE);
+            if (execute_builtIn(token) == 0 && (strcmp(token[0], "exit") != 0)) {
+                execute_external(token);
+            } else if ((strcmp(token[0], "exit") == 0)) {
+                flag = 0;
+                break;
+            }
+            memset(token, 0, sizeof token);
+        }
+        memset(cmds, 0, sizeof cmds);
+    }
+    return flag;
+}
+
+int execute_input(char *input, char **tokens) {
+    
+    int retVal = 1;
+
+    // check for special character
+    int io_char = parse_io_char(tokens);
+    int pipe_char = parse_pipe_char(input, tokens);
+
+    if (io_char == 0 && pipe_char == 0) {
+        retVal = execute_builtIn(tokens);
+        if (retVal == 0 && (strcmp(tokens[0], "exit") != 0)) {
+            retVal = execute_external(tokens);    
+        } 
     }
     return retVal;
 }
@@ -299,6 +290,7 @@ int execute_input(char **tokens) {
 int main () {
     /* Define a variable to read user input. Assuming the input to be not greater than 80 characters */
     char input[SIZE];
+    char inputClone[SIZE];
     int status;
     do {
         char *tokens[SIZE];
@@ -306,10 +298,16 @@ int main () {
         printf("$ ");
 
         read_input(input);
+
+        strcpy(inputClone, input);
         
-        parse_input(input, tokens);
+        parse_input(input, tokens, SPACE);
         
-        status = execute_input(tokens);
+        if (tokens[0] == NULL) {
+            status = 0;
+        } else {
+            status = execute_input(inputClone, tokens);
+        }
 
         memset(tokens, 0, sizeof tokens);
 
