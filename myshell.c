@@ -236,7 +236,6 @@ int execute_external(char **tokens) {
     } 
     else {
         if (bg == 0) {
-            sleep(5);
             waitpid(pid, &status, WUNTRACED);
         }
     }
