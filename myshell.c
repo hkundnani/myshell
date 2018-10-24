@@ -9,8 +9,23 @@ const char *COMMANDS[] = {"exit", "cd", "pwd", "set"};
 const char *PIPE = "|";
 const char *SPACE = " \t\n\r";
 
+int bg = 0;
+int myls = 0;
+
 void read_input(char *input) {
     fgets(input, 80, stdin);
+}
+
+void set_path() {
+    char *dir = (char*)malloc(sizeof(char) * SIZE);
+    char *full_path = NULL;
+
+    if (getcwd(dir, (sizeof(char) * SIZE)) != NULL) {
+        full_path = strcat(dir, "/myls");
+        if (setenv("MYPATH", full_path, 1) != 0) {
+            printf ("Error\n");
+        }
+    }
 }
 
 void parse_input (char *input, char **tokens, const char *delim) {
@@ -20,6 +35,13 @@ void parse_input (char *input, char **tokens, const char *delim) {
     token = strtok(input, delim);
     
     while (token != NULL) {
+        if (strcmp(token, "&") == 0) {
+            bg = 1;
+            token = NULL;
+        } else if (strcmp(token, "myls") == 0) {
+            myls = 1;
+            set_path();            
+        }
         tokens[index] = token;
         index++;
         token = strtok(NULL, delim);
@@ -177,7 +199,6 @@ int myshell_set(char **tokens) {
     char *token;
     char param[SIZE][SIZE];
     int index = 0;
-    // char param2[SIZE];
 
     if (tokens[1] == NULL) {
         printf ("Need additional argument");
@@ -194,18 +215,19 @@ int myshell_set(char **tokens) {
             printf ("Error executing cd command\n");
         }
     }
-    // token = getenv(param[0]); 
-    // if (token != NULL) {
-    //     printf ("token: %s\n", token);
-    // }
     return 1;
 }
 
 int execute_external(char **tokens) {
     int status;
     pid_t pid = fork();
+    
     if (pid == 0) {
-        if (execvp(tokens[0], tokens) == -1) {
+        if (strcmp(tokens[0], "myls") == 0) {
+            if (execvp(getenv("MYPATH"), tokens) == -1) {
+                perror("Error");
+            }    
+        } else if (execvp(tokens[0], tokens) == -1) {
             perror("Error");
         }
         exit(EXIT_FAILURE);
@@ -213,7 +235,10 @@ int execute_external(char **tokens) {
         perror ("Error");
     } 
     else {
-        waitpid(pid, &status, 0);
+        if (bg == 0) {
+            sleep(5);
+            waitpid(pid, &status, WUNTRACED);
+        }
     }
     return 1;
 }
@@ -287,11 +312,12 @@ int execute_input(char *input, char **tokens) {
     return retVal;
 }
 
-int main () {
+int main (int argc, char **argv) {
     /* Define a variable to read user input. Assuming the input to be not greater than 80 characters */
     char input[SIZE];
     char inputClone[SIZE];
     int status;
+
     do {
         char *tokens[SIZE];
 
@@ -304,14 +330,14 @@ int main () {
         parse_input(input, tokens, SPACE);
         
         if (tokens[0] == NULL) {
-            status = 0;
+            status = 1;
         } else {
             status = execute_input(inputClone, tokens);
         }
 
         memset(tokens, 0, sizeof tokens);
 
-    } while (status);
+    } while (status && !feof(stdin));
 
     return 0;
 }
