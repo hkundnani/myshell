@@ -12,22 +12,29 @@ const char *SPACE = " \t\n\r";
 int bg = 0;
 int myls = 0;
 
+
+// Function to read the input from the stdin
 void read_input(char *input) {
     fgets(input, 80, stdin);
 }
 
+// Function to set the path for myls
 void set_path() {
     char *dir = (char*)malloc(sizeof(char) * SIZE);
     char *full_path = NULL;
-
+    
+    /* Get the current directory path, concat myls executable to it and set it as MYPATH */
     if (getcwd(dir, (sizeof(char) * SIZE)) != NULL) {
         full_path = strcat(dir, "/myls");
         if (setenv("MYPATH", full_path, 1) != 0) {
-            printf ("Error\n");
+            perror("Error");
         }
+    } else {
+        perror("Error");
     }
 }
 
+// Function to tokenize the input received from stdin
 void parse_input (char *input, char **tokens, const char *delim) {
     char *token;
     int index = 0;
@@ -35,9 +42,11 @@ void parse_input (char *input, char **tokens, const char *delim) {
     token = strtok(input, delim);
     
     while (token != NULL) {
+        // Set the background process flag if & is present
         if (strcmp(token, "&") == 0) {
             bg = 1;
             token = NULL;
+        // Set the myls flag if myls is present to set the path    
         } else if (strcmp(token, "myls") == 0) {
             myls = 1;
             set_path();            
@@ -49,20 +58,23 @@ void parse_input (char *input, char **tokens, const char *delim) {
     tokens[index] = NULL;
 }
 
+// Function to handle input redirection
 int handle_in_redirection(char *filename, char **tokens) {
     int status;
     FILE *fp;
     pid_t pid = fork();
+
     if (pid == 0) {
         fp = freopen(filename, "r", stdin);
         if (fp == NULL) {
-            printf ("Error in opening file\n");
+            printf ("Error");
+        } else {
+            if (execvp(tokens[0], tokens) == -1) {
+                perror("Error");
+            }
+            fclose(fp);
+            exit(EXIT_FAILURE);
         }
-        if (execvp(tokens[0], tokens) == -1) {
-            perror("Error");
-        }
-        fclose(fp);
-        exit(EXIT_FAILURE);
     } else if (pid == -1) {
         perror ("Error");
     } 
@@ -72,10 +84,12 @@ int handle_in_redirection(char *filename, char **tokens) {
     return 1;
 }
 
+// Function to handle output redirection
 int handle_out_redirection(char *filename, char **tokens) {
     int status;
     FILE *fp;
     pid_t pid = fork();
+
     if (pid == 0) {
         fp = freopen(filename, "w+", stdout);
         if (fp == NULL) {
@@ -95,11 +109,13 @@ int handle_out_redirection(char *filename, char **tokens) {
     return 1;
 }
 
+// Function to handle both input and output redirection
 int handle_in_out_redirection(char * filenameIn, char *filenameOut, char **tokens) {
     int status;
     FILE *fpIn;
     FILE *fpOut;
     pid_t pid = fork();
+
     if (pid == 0) {
         fpIn = freopen(filenameIn, "r", stdin);
         fpOut = freopen(filenameOut, "w+", stdout);
@@ -121,6 +137,7 @@ int handle_in_out_redirection(char * filenameIn, char *filenameOut, char **token
     return 1;
 }
 
+/* Function to check if input/output redirection is present and call the respective functions to handle input/output redirection */
 int parse_io_char(char **tokens) {
     char *filenameIn = NULL;
     char *filenameOut = NULL;
@@ -167,42 +184,52 @@ int parse_io_char(char **tokens) {
     }
 }
 
+// Function to change the directory
 int myshell_cd(char **tokens) {
+    
+    /* If no directory name is mentioned then change the directory to home directory */ 
     if (tokens[1] == NULL) {
         char *token = getenv("HOME");
         if (chdir(token) != 0) {
-            printf ("Error executing cd command\n");
+            perror ("Error");
         }
     } else {
         if (chdir(tokens[1]) != 0) {
-            printf ("Error executing cd command\n");
+            perror ("Error");
         }
-    }
-    return 1; 
-}
-
-int myshell_exit(char **tokens) {
-    return 0;
-}
-
-int myshell_pwd(char **tokens) {
-    char *dir = (char*)malloc(sizeof(char) * SIZE);
-    if (getcwd(dir, (sizeof(char) * SIZE)) != NULL) {
-        printf ("%s\n", dir);
-    } else {
-        printf ("Error\n");
     }
     return 1;
 }
 
+// Function to exit myshell
+int myshell_exit(char **tokens) {
+    return 0;
+}
+
+// Function to show the path of current working directory
+int myshell_pwd(char **tokens) {
+    char *dir = (char*)malloc(sizeof(char) * SIZE);
+    
+    if (getcwd(dir, (sizeof(char) * SIZE)) != NULL) {
+        printf ("%s\n", dir);
+    } else {
+        perror ("Error");
+    }
+    free (dir);
+    return 1;
+}
+
+// Function to set the environment variable
 int myshell_set(char **tokens) {
     char *token;
     char param[SIZE][SIZE];
     int index = 0;
 
+    // Check if variable is passed along with set
     if (tokens[1] == NULL) {
-        printf ("Need additional argument");
+        printf ("Error: Need additional arguments\n");
     } else {
+        /* Tokenize the environment variable into variable and value and use setenv to set the value */
         token = strtok(tokens[1], "=");
         while (token != NULL) {
             for (size_t i=0; i < strlen(token); i++) {
@@ -212,12 +239,13 @@ int myshell_set(char **tokens) {
             token = strtok(NULL, "=");
         }
         if (setenv(param[0], param[1], 1) != 0) {
-            printf ("Error executing cd command\n");
+            perror ("Error");
         }
     }
     return 1;
 }
 
+// Function to execute the external commands
 int execute_external(char **tokens) {
     int status;
     pid_t pid = fork();
@@ -236,12 +264,15 @@ int execute_external(char **tokens) {
     } 
     else {
         if (bg == 0) {
-            waitpid(pid, &status, WUNTRACED);
+            waitpid(pid, &status, 0);
+        } else {
+            bg = 0;
         }
     }
     return 1;
 }
 
+/* Function to check if the command is a built-in command and call the respective functions */
 int execute_builtIn(char **tokens) {
     int builtinCount = sizeof COMMANDS / sizeof *COMMANDS;
 
@@ -267,30 +298,78 @@ int execute_builtIn(char **tokens) {
 }
 
 int parse_pipe_char(char *input, char **tokens) {
-    int flag = 0;
-    char *cmds[SIZE]; 
     char *token[SIZE];
-
+    char *cmds[SIZE];
+    int flag = 0;
+    int count = 0;
+    pid_t pid;
+    
     for (int i = 0; tokens[i] != NULL; i++) {
         if (strcmp(tokens[i], "|") == 0) {
             flag = 1;
-            break;
+            count++;
         }
     }
     if (flag == 1) {
+        int pipefd[2];
+        int fd = 0;
+        int status;
         parse_input(input, cmds, PIPE);
+
         for (int i = 0; cmds[i] != NULL; i++) {
             parse_input(cmds[i], token, SPACE);
-            if (execute_builtIn(token) == 0 && (strcmp(token[0], "exit") != 0)) {
-                execute_external(token);
-            } else if ((strcmp(token[0], "exit") == 0)) {
-                flag = 0;
-                break;
+
+            if (pipe(pipefd) == -1) {
+                perror("pipe");
+                exit(EXIT_FAILURE);
             }
-            memset(token, 0, sizeof token);
+            
+            pid = fork();
+            if (pid == -1) {
+                perror("fork");
+                exit(EXIT_FAILURE);
+            } else if(pid == 0) {
+                dup2(fd, 0);
+                if (cmds[i+1] != NULL) {
+                    dup2(pipefd[1], 1);
+                }
+                close(pipefd[0]);
+                if (execvp(token[0], token) == -1) {
+                    perror("Error");
+                }
+                exit(EXIT_FAILURE);
+            } else {
+                waitpid(pid, &status, 0);
+                close(pipefd[1]);
+                fd = pipefd[0];
+            }
         }
-        memset(cmds, 0, sizeof cmds);
     }
+    
+    // int flag = 0;
+    // char *cmds[SIZE]; 
+    // char *token[SIZE];
+
+    // for (int i = 0; tokens[i] != NULL; i++) {
+    //     if (strcmp(tokens[i], "|") == 0) {
+    //         flag = 1;
+    //         break;
+    //     }
+    // }
+    // if (flag == 1) {
+    //     parse_input(input, cmds, PIPE);
+    //     for (int i = 0; cmds[i] != NULL; i++) {
+    //         parse_input(cmds[i], token, SPACE);
+    //         if (execute_builtIn(token) == 0 && (strcmp(token[0], "exit") != 0)) {
+    //             execute_external(token);
+    //         } else if ((strcmp(token[0], "exit") == 0)) {
+    //             flag = 0;
+    //             break;
+    //         }
+    //         memset(token, 0, sizeof token);
+    //     }
+    //     memset(cmds, 0, sizeof cmds);
+    // }
     return flag;
 }
 
