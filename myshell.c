@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdlib.h>
+#include <signal.h>
 
 const int SIZE = 80;
 const char *COMMANDS[] = {"exit", "cd", "pwd", "set"};
@@ -12,6 +13,9 @@ const char *SPACE = " \t\n\r";
 int bg = 0;
 int myls = 0;
 
+void handle_sig_child(int sig) {
+    while(waitpid((pid_t) (-1), 0, WNOHANG) > 0);
+}
 
 // Function to read the input from the stdin
 void read_input(char *input) {
@@ -61,19 +65,19 @@ void parse_input (char *input, char **tokens, const char *delim) {
 // Function to handle input redirection
 int handle_in_redirection(char *filename, char **tokens) {
     int status;
-    FILE *fp;
+    FILE *fp = NULL;
     pid_t pid = fork();
 
     if (pid == 0) {
         fp = freopen(filename, "r", stdin);
         if (fp == NULL) {
-            printf ("Error");
+            perror ("Error");
+            exit(EXIT_FAILURE);
         } else {
             if (execvp(tokens[0], tokens) == -1) {
                 perror("Error");
+                exit(EXIT_FAILURE);
             }
-            fclose(fp);
-            exit(EXIT_FAILURE);
         }
     } else if (pid == -1) {
         perror ("Error");
@@ -93,13 +97,15 @@ int handle_out_redirection(char *filename, char **tokens) {
     if (pid == 0) {
         fp = freopen(filename, "w+", stdout);
         if (fp == NULL) {
-            printf ("Error in opening file\n");
+            perror ("Error");
+            exit(EXIT_FAILURE);
+        } else {
+            if (execvp(tokens[0], tokens) == -1) {
+                perror("Error");
+                exit(EXIT_FAILURE);
+            }
+            fclose(fp);
         }
-        if (execvp(tokens[0], tokens) == -1) {
-            perror("Error");
-        }
-        fclose(fp);
-        exit(EXIT_FAILURE);
     } else if (pid == -1) {
         perror ("Error");
     } 
@@ -116,18 +122,21 @@ int handle_in_out_redirection(char * filenameIn, char *filenameOut, char **token
     FILE *fpOut;
     pid_t pid = fork();
 
+// Open two files to read from one and write to other after execution.
     if (pid == 0) {
         fpIn = freopen(filenameIn, "r", stdin);
         fpOut = freopen(filenameOut, "w+", stdout);
         if (fpIn == NULL || fpOut == NULL) {
-            printf ("Error in opening file\n");
+            perror ("Error");
+            exit(EXIT_FAILURE);
+        } else {
+            if (execvp(tokens[0], tokens) == -1) {
+                perror("Error");
+                exit(EXIT_FAILURE);
+            }
+            fclose(fpIn);
+            fclose(fpOut);
         }
-        if (execvp(tokens[0], tokens) == -1) {
-            perror("Error");
-        }
-        fclose(fpIn);
-        fclose(fpOut);
-        exit(EXIT_FAILURE);
     } else if (pid == -1) {
         perror ("Error");
     } 
@@ -247,24 +256,24 @@ int myshell_set(char **tokens) {
 
 // Function to execute the external commands
 int execute_external(char **tokens) {
-    int status;
     pid_t pid = fork();
     
     if (pid == 0) {
         if (strcmp(tokens[0], "myls") == 0) {
             if (execvp(getenv("MYPATH"), tokens) == -1) {
                 perror("Error");
+                exit(EXIT_FAILURE);
             }    
         } else if (execvp(tokens[0], tokens) == -1) {
             perror("Error");
+            exit(EXIT_FAILURE);
         }
-        exit(EXIT_FAILURE);
     } else if (pid == -1) {
         perror ("Error");
     } 
     else {
         if (bg == 0) {
-            waitpid(pid, &status, 0);
+            waitpid(pid, NULL, 0);
         } else {
             bg = 0;
         }
@@ -297,6 +306,7 @@ int execute_builtIn(char **tokens) {
     return 0;
 }
 
+// Function to handle commands with pipe 
 int parse_pipe_char(char *input, char **tokens) {
     char *token[SIZE];
     char *cmds[SIZE];
@@ -304,6 +314,7 @@ int parse_pipe_char(char *input, char **tokens) {
     int count = 0;
     pid_t pid;
     
+    // Check if pipe is present and count the number of pipes
     for (int i = 0; tokens[i] != NULL; i++) {
         if (strcmp(tokens[i], "|") == 0) {
             flag = 1;
@@ -314,11 +325,16 @@ int parse_pipe_char(char *input, char **tokens) {
         int pipefd[2];
         int fd = 0;
         int status;
+
+        // Tokenize the input based on the pipes
         parse_input(input, cmds, PIPE);
 
         for (int i = 0; cmds[i] != NULL; i++) {
+            
+            // Tokenize the commands based on space
             parse_input(cmds[i], token, SPACE);
 
+            // Create the channel for communication
             if (pipe(pipefd) == -1) {
                 perror("pipe");
                 exit(EXIT_FAILURE);
@@ -329,50 +345,35 @@ int parse_pipe_char(char *input, char **tokens) {
                 perror("fork");
                 exit(EXIT_FAILURE);
             } else if(pid == 0) {
+                // set the fd as standard input
                 dup2(fd, 0);
                 if (cmds[i+1] != NULL) {
+                    // set the standard output
                     dup2(pipefd[1], 1);
                 }
+                // close the descriptor for reading in the child 
                 close(pipefd[0]);
-                if (execvp(token[0], token) == -1) {
+                if (strcmp(token[0], "myls") == 0) {
+                    if (execvp(getenv("MYPATH"), token) == -1) {
+                        perror("Error");
+                        exit(EXIT_FAILURE);
+                    }    
+                } else if (execvp(token[0], token) == -1) {
                     perror("Error");
+                    exit(EXIT_FAILURE);
                 }
-                exit(EXIT_FAILURE);
             } else {
                 waitpid(pid, &status, 0);
+                // close the descriptor for writing in the parent
                 close(pipefd[1]);
                 fd = pipefd[0];
             }
         }
     }
-    
-    // int flag = 0;
-    // char *cmds[SIZE]; 
-    // char *token[SIZE];
-
-    // for (int i = 0; tokens[i] != NULL; i++) {
-    //     if (strcmp(tokens[i], "|") == 0) {
-    //         flag = 1;
-    //         break;
-    //     }
-    // }
-    // if (flag == 1) {
-    //     parse_input(input, cmds, PIPE);
-    //     for (int i = 0; cmds[i] != NULL; i++) {
-    //         parse_input(cmds[i], token, SPACE);
-    //         if (execute_builtIn(token) == 0 && (strcmp(token[0], "exit") != 0)) {
-    //             execute_external(token);
-    //         } else if ((strcmp(token[0], "exit") == 0)) {
-    //             flag = 0;
-    //             break;
-    //         }
-    //         memset(token, 0, sizeof token);
-    //     }
-    //     memset(cmds, 0, sizeof cmds);
-    // }
     return flag;
 }
 
+/* Function to check for special character and call corresponding function to execute commands */
 int execute_input(char *input, char **tokens) {
     
     int retVal = 1;
@@ -397,14 +398,18 @@ int main (int argc, char **argv) {
     int status;
 
     do {
+        signal(SIGCHLD, handle_sig_child);
+
         char *tokens[SIZE];
 
         printf("$ ");
 
         read_input(input);
 
+        // Create a clone of the input command as strtok modifies the original string
         strcpy(inputClone, input);
         
+        // Tokenize the input based on space
         parse_input(input, tokens, SPACE);
         
         if (tokens[0] == NULL) {
@@ -413,6 +418,7 @@ int main (int argc, char **argv) {
             status = execute_input(inputClone, tokens);
         }
 
+        // Clear tokens array after every execution
         memset(tokens, 0, sizeof tokens);
 
     } while (status && !feof(stdin));
