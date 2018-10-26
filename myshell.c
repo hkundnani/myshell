@@ -11,7 +11,6 @@ const char *PIPE = "|";
 const char *SPACE = " \t\n\r";
 
 int bg = 0;
-int myls = 0;
 
 void handle_sig_child(int sig) {
     while(waitpid((pid_t) (-1), 0, WNOHANG) > 0);
@@ -20,22 +19,6 @@ void handle_sig_child(int sig) {
 // Function to read the input from the stdin
 char *read_input(char *input) {
     return fgets(input, 80, stdin);
-}
-
-// Function to set the path for myls
-void set_path() {
-    char *dir = (char*)malloc(sizeof(char) * SIZE);
-    char *full_path = NULL;
-    
-    /* Get the current directory path, concat myls executable to it and set it as MYPATH */
-    if (getcwd(dir, (sizeof(char) * SIZE)) != NULL) {
-        full_path = strcat(dir, "/myls");
-        if (setenv("MYPATH", full_path, 1) != 0) {
-            perror("Error");
-        }
-    } else {
-        perror("Error");
-    }
 }
 
 // Function to tokenize the input received from stdin
@@ -49,11 +32,7 @@ void parse_input (char *input, char **tokens, const char *delim) {
         // Set the background process flag if & is present
         if (strcmp(token, "&") == 0) {
             bg = 1;
-            token = NULL;
-        // Set the myls flag if myls is present to set the path    
-        } else if (strcmp(token, "myls") == 0) {
-            myls = 1;
-            set_path();            
+            token = NULL;   
         }
         tokens[index] = token;
         index++;
@@ -74,7 +53,15 @@ int handle_in_redirection(char *filename, char **tokens) {
             perror ("Error");
             exit(EXIT_FAILURE);
         } else {
-            if (execvp(tokens[0], tokens) == -1) {
+            if (strcmp(tokens[0], "myls") == 0) {
+                if (getenv("MYPATH") == NULL) {
+                    printf ("Error: MYPATH not set\n");
+                    exit(EXIT_FAILURE);
+                } else if (execvp(getenv("MYPATH"), tokens) == -1) {
+                    perror("Error");
+                    exit(EXIT_FAILURE);
+                }    
+            } else if (execvp(tokens[0], tokens) == -1) {
                 perror("Error");
                 exit(EXIT_FAILURE);
             }
@@ -100,7 +87,15 @@ int handle_out_redirection(char *filename, char **tokens) {
             perror ("Error");
             exit(EXIT_FAILURE);
         } else {
-            if (execvp(tokens[0], tokens) == -1) {
+            if (strcmp(tokens[0], "myls") == 0) {
+                if (getenv("MYPATH") == NULL) {
+                    printf ("Error: MYPATH not set\n");
+                    exit(EXIT_FAILURE);
+                } else if (execvp(getenv("MYPATH"), tokens) == -1) {
+                    perror("Error");
+                    exit(EXIT_FAILURE);
+                }    
+            } else if (execvp(tokens[0], tokens) == -1) {
                 perror("Error");
                 exit(EXIT_FAILURE);
             }
@@ -130,7 +125,15 @@ int handle_in_out_redirection(char * filenameIn, char *filenameOut, char **token
             perror ("Error");
             exit(EXIT_FAILURE);
         } else {
-            if (execvp(tokens[0], tokens) == -1) {
+            if (strcmp(tokens[0], "myls") == 0) {
+                if (getenv("MYPATH") == NULL) {
+                    printf ("Error: MYPATH not set\n");
+                    exit(EXIT_FAILURE);
+                } else if (execvp(getenv("MYPATH"), tokens) == -1) {
+                    perror("Error");
+                    exit(EXIT_FAILURE);
+                }    
+            } else if (execvp(tokens[0], tokens) == -1) {
                 perror("Error");
                 exit(EXIT_FAILURE);
             }
@@ -260,7 +263,10 @@ int execute_external(char **tokens) {
     
     if (pid == 0) {
         if (strcmp(tokens[0], "myls") == 0) {
-            if (execvp(getenv("MYPATH"), tokens) == -1) {
+            if (getenv("MYPATH") == NULL) {
+                printf ("Error: MYPATH not set\n");
+                exit(EXIT_FAILURE);
+            } else if (execvp(getenv("MYPATH"), tokens) == -1) {
                 perror("Error");
                 exit(EXIT_FAILURE);
             }    
@@ -354,7 +360,10 @@ int parse_pipe_char(char *input, char **tokens) {
                 // close the descriptor for reading in the child 
                 close(pipefd[0]);
                 if (strcmp(token[0], "myls") == 0) {
-                    if (execvp(getenv("MYPATH"), token) == -1) {
+                    if (getenv("MYPATH") == NULL) {
+                        printf ("Error: MYPATH not set\n");
+                        exit(EXIT_FAILURE);
+                    } else if (execvp(getenv("MYPATH"), token) == -1) {
                         perror("Error");
                         exit(EXIT_FAILURE);
                     }    
