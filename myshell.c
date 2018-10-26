@@ -18,8 +18,8 @@ void handle_sig_child(int sig) {
 }
 
 // Function to read the input from the stdin
-void read_input(char *input) {
-    fgets(input, 80, stdin);
+char *read_input(char *input) {
+    return fgets(input, 80, stdin);
 }
 
 // Function to set the path for myls
@@ -404,7 +404,9 @@ int main (int argc, char **argv) {
 
         printf("$ ");
 
-        read_input(input);
+        if (read_input(input) == NULL) {
+            break;
+        };
 
         // Create a clone of the input command as strtok modifies the original string
         strcpy(inputClone, input);
